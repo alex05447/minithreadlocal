@@ -1,4 +1,4 @@
-# minifiber
+# minithreadlocal
 
 Thin wrapper around the Windows thread local API.
 

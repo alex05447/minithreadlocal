@@ -1,10 +1,12 @@
-use std::ptr;
 use std::marker::PhantomData;
+use std::ptr;
 
-use winapi::shared::minwindef::{ DWORD, LPVOID };
+use winapi::shared::minwindef::{DWORD, LPVOID};
 use winapi::shared::winerror::ERROR_SUCCESS;
-use winapi::um::processthreadsapi::{ TlsAlloc, TlsFree, TlsSetValue, TlsGetValue, TLS_OUT_OF_INDEXES };
 use winapi::um::errhandlingapi::GetLastError;
+use winapi::um::processthreadsapi::{
+    TlsAlloc, TlsFree, TlsGetValue, TlsSetValue, TLS_OUT_OF_INDEXES,
+};
 
 /// Low-level OS thread local storage abstraction with minimal safety guarantees.
 ///
@@ -20,23 +22,21 @@ use winapi::um::errhandlingapi::GetLastError;
 /// [`take`]: #method.take
 /// [`free_index`]: #method.free_index
 #[derive(Copy)]
-pub struct ThreadLocal<T>
-{
-    index :DWORD,
-    _marker :PhantomData<T>,
+pub struct ThreadLocal<T> {
+    index: DWORD,
+    _marker: PhantomData<T>,
 }
 
 impl<T> Clone for ThreadLocal<T> {
     fn clone(&self) -> Self {
         Self {
-            index : self.index,
-            _marker : PhantomData,
+            index: self.index,
+            _marker: PhantomData,
         }
     }
 }
 
-impl<T> ThreadLocal<T>
-{
+impl<T> ThreadLocal<T> {
     /// Called once by the initializing thread.
     /// Allocates a thread local storage index the object will use to store values.
     ///
@@ -45,9 +45,7 @@ impl<T> ThreadLocal<T>
     /// Panics if the OS runs out of TLS indices. The upper limit depends on the OS version.
     /// It's not recommended to create more than a handful of `ThreadLocal` objects.
     pub fn new() -> Self {
-        let index = unsafe {
-            TlsAlloc()
-        };
+        let index = unsafe { TlsAlloc() };
 
         if index == TLS_OUT_OF_INDEXES {
             panic!("Out of thread local storage indices.");
@@ -55,7 +53,7 @@ impl<T> ThreadLocal<T>
 
         Self {
             index,
-            _marker :PhantomData,
+            _marker: PhantomData,
         }
     }
 
@@ -66,8 +64,11 @@ impl<T> ThreadLocal<T>
     /// Panics if the thread's slot was already occupied by a previous call to [`store`].
     ///
     /// [`store`]: #method.store
-    pub fn store(&self, t :T) {
-        assert!(self.get_ptr().is_null(), "Tried to store a new value into an occupied thread local storeage slot.");
+    pub fn store(&self, t: T) {
+        assert!(
+            self.get_ptr().is_null(),
+            "Tried to store a new value into an occupied thread local storeage slot."
+        );
         let boxed = Box::new(t);
         self.set_ptr(Box::into_raw(boxed));
     }
@@ -82,7 +83,10 @@ impl<T> ThreadLocal<T>
     /// [`store`]: #method.store
     pub fn take(&self) -> T {
         let ptr = self.get_ptr();
-        assert!(!ptr.is_null(), "Tried to take an empty thread local storage slot.");
+        assert!(
+            !ptr.is_null(),
+            "Tried to take an empty thread local storage slot."
+        );
         let boxed = unsafe { Box::from_raw(ptr) };
         self.set_ptr(ptr::null_mut());
         *boxed
@@ -92,7 +96,6 @@ impl<T> ThreadLocal<T>
     /// or `None` if the slot is empty.
     ///
     /// [`store`]: #method.store
-    #[cfg(test)]
     pub fn try_as_mut(&self) -> Option<&mut T> {
         self.as_mut_impl()
     }
@@ -101,7 +104,6 @@ impl<T> ThreadLocal<T>
     /// or `None` if the slot is empty.
     ///
     /// [`store`]: #method.store
-    #[cfg(test)]
     pub fn try_as_ref(&self) -> Option<&T> {
         self.as_mut_impl().map(|r| r as &T)
     }
@@ -114,7 +116,8 @@ impl<T> ThreadLocal<T>
     ///
     /// [`store`]: #method.store
     pub fn as_mut(&self) -> &mut T {
-        self.as_mut_impl().expect("Tried to access an empty thread local storage slot.")
+        self.as_mut_impl()
+            .expect("Tried to access an empty thread local storage slot.")
     }
 
     /// Returns a reference to the value stored in this thread's local slot by a previous call to [`store`].
@@ -125,7 +128,9 @@ impl<T> ThreadLocal<T>
     ///
     /// [`store`]: #method.store
     pub fn as_ref(&self) -> &T {
-        self.as_mut_impl().map(|r| r as &T).expect("Tried to access an empty thread local storage slot.")
+        self.as_mut_impl()
+            .map(|r| r as &T)
+            .expect("Tried to access an empty thread local storage slot.")
     }
 
     /// Frees the thread's local storage slot, disallowing further use of the `ThreadLocal` object.
@@ -139,8 +144,14 @@ impl<T> ThreadLocal<T>
     ///
     /// [`free_index`]: #method.free_index
     pub fn free_index(&mut self) {
-        assert!(self.index != TLS_OUT_OF_INDEXES, "`ThreadLocal::free_index` called more than once.");
-        assert!(self.get_ptr().is_null(), "Leaked a thread local object in the finalizing thread.");
+        assert!(
+            self.index != TLS_OUT_OF_INDEXES,
+            "`ThreadLocal::free_index` called more than once."
+        );
+        assert!(
+            self.get_ptr().is_null(),
+            "Leaked a thread local object in the finalizing thread."
+        );
 
         unsafe {
             if TlsFree(self.index) == 0 {
@@ -154,14 +165,17 @@ impl<T> ThreadLocal<T>
     fn as_mut_impl(&self) -> Option<&mut T> {
         let ptr = self.get_ptr();
         if !ptr.is_null() {
-            Some( unsafe { &mut *ptr } )
+            Some(unsafe { &mut *ptr })
         } else {
             None
         }
     }
 
-    fn set_ptr(&self, ptr :*const T) {
-        assert!(self.index != TLS_OUT_OF_INDEXES, "Tried to store a value to a freed thread local storage index.");
+    fn set_ptr(&self, ptr: *const T) {
+        assert!(
+            self.index != TLS_OUT_OF_INDEXES,
+            "Tried to store a value to a freed thread local storage index."
+        );
         unsafe {
             if TlsSetValue(self.index, ptr as LPVOID) == 0 {
                 panic!("Failed to store to thread local storage.");
@@ -188,30 +202,27 @@ unsafe impl<T> Sync for ThreadLocal<T> {}
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{ Arc, atomic::{ AtomicUsize, Ordering } };
+    use std::sync::{
+        atomic::{AtomicUsize, Ordering},
+        Arc,
+    };
     use std::thread;
 
     use super::*;
 
     struct ThreadLocalResource<'a> {
-        reference :&'a AtomicUsize,
-        value :usize,
+        reference: &'a AtomicUsize,
+        value: usize,
     }
 
     impl<'a> ThreadLocalResource<'a> {
-        fn new(reference :&'a AtomicUsize, value :usize) -> Self {
+        fn new(reference: &'a AtomicUsize, value: usize) -> Self {
             reference.fetch_add(1, Ordering::SeqCst);
-            Self {
-                reference,
-                value,
-            }
+            Self { reference, value }
         }
 
         fn load(&self) -> (usize, usize) {
-            (
-                self.reference.load(Ordering::SeqCst),
-                self.value,
-            )
+            (self.reference.load(Ordering::SeqCst), self.value)
         }
     }
 

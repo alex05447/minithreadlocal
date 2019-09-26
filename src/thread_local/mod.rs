@@ -2,6 +2,4 @@
 mod win;
 
 #[cfg(windows)]
-pub use win::{
-    ThreadLocal
-};
+pub use win::ThreadLocal;

@@ -21,11 +21,12 @@ use winapi::um::processthreadsapi::{
 /// [`store`]: #method.store
 /// [`take`]: #method.take
 /// [`free_index`]: #method.free_index
-#[derive(Copy)]
 pub struct ThreadLocal<T> {
     index: DWORD,
     _marker: PhantomData<T>,
 }
+
+impl<T> Copy for ThreadLocal<T> {}
 
 impl<T> Clone for ThreadLocal<T> {
     fn clone(&self) -> Self {
@@ -92,32 +93,12 @@ impl<T> ThreadLocal<T> {
         *boxed
     }
 
-    /// Returns a mutable reference to the value stored in this thread's local slot by a previous call to [`store`],
-    /// or `None` if the slot is empty.
-    ///
-    /// [`store`]: #method.store
-    pub fn try_as_mut(&self) -> Option<&mut T> {
-        self.as_mut_impl()
-    }
-
     /// Returns a reference to the value stored in this thread's local slot by a previous call to [`store`],
     /// or `None` if the slot is empty.
     ///
     /// [`store`]: #method.store
     pub fn try_as_ref(&self) -> Option<&T> {
         self.as_mut_impl().map(|r| r as &T)
-    }
-
-    /// Returns a mutable reference to the value stored in this thread's local slot by a previous call to [`store`].
-    ///
-    /// # Panics
-    ///
-    /// Panics if the thread's slot is empty.
-    ///
-    /// [`store`]: #method.store
-    pub fn as_mut(&self) -> &mut T {
-        self.as_mut_impl()
-            .expect("Tried to access an empty thread local storage slot.")
     }
 
     /// Returns a reference to the value stored in this thread's local slot by a previous call to [`store`].
@@ -128,9 +109,54 @@ impl<T> ThreadLocal<T> {
     ///
     /// [`store`]: #method.store
     pub fn as_ref(&self) -> &T {
-        self.as_mut_impl()
-            .map(|r| r as &T)
+        self.try_as_ref()
             .expect("Tried to access an empty thread local storage slot.")
+    }
+
+    /// Returns a reference to the value stored in this thread's local slot by a previous call to [`store`],
+    /// or, if the slot is empty, stores a new value returned by `f` and returns a reference to it.
+    ///
+    /// [`store`]: #method.store
+    pub fn as_ref_or<F: FnOnce() -> T>(&self, f: F) -> &T {
+        if let Some(val) = self.try_as_mut() {
+            val
+        } else {
+            self.store(f());
+            self.as_ref()
+        }
+    }
+
+    /// Returns a mutable reference to the value stored in this thread's local slot by a previous call to [`store`],
+    /// or `None` if the slot is empty.
+    ///
+    /// [`store`]: #method.store
+    pub fn try_as_mut(&self) -> Option<&mut T> {
+        self.as_mut_impl()
+    }
+
+    /// Returns a mutable reference to the value stored in this thread's local slot by a previous call to [`store`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the thread's slot is empty.
+    ///
+    /// [`store`]: #method.store
+    pub fn as_mut(&self) -> &mut T {
+        self.try_as_mut()
+            .expect("Tried to access an empty thread local storage slot.")
+    }
+
+    /// Returns a reference to the value stored in this thread's local slot by a previous call to [`store`],
+    /// or, if the slot is empty, stores a new value returned by `f` and returns a reference to it.
+    ///
+    /// [`store`]: #method.store
+    pub fn as_mut_or<F: FnOnce() -> T>(&self, f: F) -> &mut T {
+        if let Some(val) = self.try_as_mut() {
+            val
+        } else {
+            self.store(f());
+            self.as_mut()
+        }
     }
 
     /// Frees the thread's local storage slot, disallowing further use of the `ThreadLocal` object.
@@ -234,14 +260,14 @@ mod tests {
 
     #[test]
     fn single_thread() {
-        let mut counter = AtomicUsize::new(0);
+        let counter = AtomicUsize::new(0);
 
         let mut t = ThreadLocal::<ThreadLocalResource>::new();
 
         assert!(t.try_as_ref().is_none());
         assert!(t.try_as_mut().is_none());
 
-        t.store(ThreadLocalResource::new(&mut counter, 7));
+        t.store(ThreadLocalResource::new(&counter, 7));
         assert_eq!(counter.load(Ordering::SeqCst), 1);
 
         assert!(t.try_as_ref().is_some());
@@ -249,6 +275,18 @@ mod tests {
 
         assert_eq!(t.as_ref().load(), (1, 7));
         assert_eq!(t.as_mut().load(), (1, 7));
+
+        t.take();
+
+        assert_eq!(counter.load(Ordering::SeqCst), 0);
+
+        assert!(t.try_as_ref().is_none());
+        assert!(t.try_as_mut().is_none());
+
+        let res = t.as_ref_or(|| ThreadLocalResource::new(&counter, 9));
+
+        assert_eq!(res.load(), (1, 9));
+        assert_eq!(res.load(), (1, 9));
 
         t.take();
 
@@ -280,23 +318,26 @@ mod tests {
         assert_eq!(t.as_mut().load(), (1, 7));
 
         let counter_clone = counter.clone();
-        let t_clone = t.clone();
+
         let thread = thread::spawn(move || {
-            t_clone.store(ThreadLocalResource::new(&*counter_clone, 9));
+            assert!(t.try_as_ref().is_none());
+            assert!(t.try_as_mut().is_none());
+
+            t.store(ThreadLocalResource::new(&*counter_clone, 9));
             assert_eq!(counter_clone.load(Ordering::SeqCst), 2);
 
-            assert!(t_clone.try_as_ref().is_some());
-            assert!(t_clone.try_as_mut().is_some());
+            assert!(t.try_as_ref().is_some());
+            assert!(t.try_as_mut().is_some());
 
-            assert_eq!(t_clone.as_ref().load(), (2, 9));
-            assert_eq!(t_clone.as_mut().load(), (2, 9));
+            assert_eq!(t.as_ref().load(), (2, 9));
+            assert_eq!(t.as_mut().load(), (2, 9));
 
-            t_clone.take();
+            t.take();
 
             assert_eq!(counter_clone.load(Ordering::SeqCst), 1);
 
-            assert!(t_clone.try_as_ref().is_none());
-            assert!(t_clone.try_as_mut().is_none());
+            assert!(t.try_as_ref().is_none());
+            assert!(t.try_as_mut().is_none());
         });
 
         thread.join().unwrap();

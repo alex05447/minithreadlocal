@@ -1,4 +1,4 @@
-//! # minifiber
+//! # minithreadlocal
 //!
 //! Thin wrapper around the Windows thread local API.
 //!
@@ -12,4 +12,4 @@
 
 mod thread_local;
 
-pub use thread_local::ThreadLocal;
+pub use thread_local::{ThreadLocal, ThreadLocalError};

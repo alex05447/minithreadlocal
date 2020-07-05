@@ -152,6 +152,13 @@ impl<T> ThreadLocal<T> {
         }
     }
 
+    /// Like [`take`], but panics on error or if the thread local storage slot is empty.
+    ///
+    /// [`take`]: #method.take
+    pub unsafe fn take_unchecked(&self) -> T {
+        self.take().unwrap().unwrap()
+    }
+
     /// Returns an immutable reference to the value stored in this thread's local slot by a previous call to [`store`],
     /// or `None` if the slot is empty.
     ///

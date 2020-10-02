@@ -1,6 +1,6 @@
 //! # minithreadlocal
 //!
-//! Thin wrapper around the Windows thread local API.
+//! Thin Rust wrapper around the Windows thread local API.
 //!
 //! Technically provides a portable API, but implemented only for Windows at the moment.
 //!

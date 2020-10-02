@@ -169,7 +169,7 @@ impl<T> ThreadLocal<T> {
     /// [`store`]: #method.store
     /// [`free_index`]: #method.free_index
     pub fn as_ref(&self) -> Result<Option<&T>, ThreadLocalError> {
-        self.as_mut_impl().map(|r| r.map(|r| r as _))
+        self.as_ref_impl()
     }
 
     /// Like [`as_ref`], but panics on error or if the thread local storage slot is empty.
@@ -189,7 +189,7 @@ impl<T> ThreadLocal<T> {
     /// [`store`]: #method.store
     /// [`free_index`]: #method.free_index
     pub fn as_ref_or<F: FnOnce() -> T>(&self, f: F) -> Result<&T, ThreadLocalError> {
-        if let Some(val) = self.as_mut()? {
+        if let Some(val) = self.as_ref()? {
             Ok(val)
         } else {
             let ptr = self.store_impl(f())?;
@@ -271,6 +271,16 @@ impl<T> ThreadLocal<T> {
         Ok(ptr)
     }
 
+    fn as_ref_impl(&self) -> Result<Option<&T>, ThreadLocalError> {
+        let ptr = self.get_ptr()?;
+
+        Ok(if !ptr.is_null() {
+            Some(unsafe { &*ptr })
+        } else {
+            None
+        })
+    }
+
     fn as_mut_impl(&self) -> Result<Option<&mut T>, ThreadLocalError> {
         let ptr = self.get_ptr()?;
 
@@ -315,7 +325,6 @@ impl<T> ThreadLocal<T> {
 }
 
 unsafe impl<T> Send for ThreadLocal<T> {}
-unsafe impl<T> Sync for ThreadLocal<T> {}
 
 #[cfg(test)]
 mod tests {
